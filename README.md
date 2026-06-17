@@ -1,6 +1,6 @@
-# Biofilm 1D Robin reduced model
+# Biofilm 1D Robin model
 
-This repository contains the reduced one-dimensional biofilm model used to generate the computational results of the manuscript on transport-controlled biofilm survival under flow.
+This repository contains the one-dimensional biofilm model used to generate the computational results of the manuscript on transport-controlled biofilm survival under flow.
 
 The model describes nutrient transport, antibiotic transport, live-biomass dynamics, growth-induced velocity and, when enabled, stress-based detachment through a moving biofilm thickness. The interfacial exchange with the surrounding fluid is represented through Robin-type transfer conditions.
 
