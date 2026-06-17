@@ -1,0 +1,14 @@
+# Julia
+Manifest.toml
+.julia/
+
+# Generated outputs
+results/*
+output/
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
