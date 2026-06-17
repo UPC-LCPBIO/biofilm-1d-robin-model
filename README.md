@@ -49,23 +49,23 @@ where $\tilde C$ is the nutrient concentration, $\tilde A$ is the antibiotic con
 
 The nondimensional governing equations are
 
-$$
+```math
 \frac{\partial \tilde C}{\partial \tilde t}
 =
 \frac{\partial^2 \tilde C}{\partial \tilde z^2}
 -
 Da\,e(\tilde C)\,\phi_\ell
-$$
+```
 
-$$
+```math
 \frac{\partial \tilde A}{\partial \tilde t}
 =
 \beta_a\frac{\partial^2 \tilde A}{\partial \tilde z^2}
 -
 D_{aa}\tilde A\phi_\ell
-$$
+```
 
-$$
+```math
 \frac{\partial \phi_\ell}{\partial \tilde t}
 +
 \frac{\partial}{\partial \tilde z}\left(\tilde v\phi_\ell\right)
@@ -73,11 +73,11 @@ $$
 \Lambda e(\tilde C)\phi_\ell
 -
 \Lambda\Pi_E(e)\tilde A\phi_\ell^{\gamma_{\mathrm{kill}}}
-$$
+```
 
 with
 
-$$
+```math
 \frac{\partial \tilde v}{\partial \tilde z}
 =
 \Lambda e(\tilde C)\phi_\ell,
@@ -85,7 +85,7 @@ $$
 \frac{d\tilde L}{d\tilde t}
 =
 \tilde v(\tilde L,\tilde t)-k_d\tilde L^2
-$$
+```
 
 The nutrient activation and antibiotic killing modulation are
 
