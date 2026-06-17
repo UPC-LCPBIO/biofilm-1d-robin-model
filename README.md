@@ -95,7 +95,7 @@ e(\tilde C)=\frac{\tilde C}{\tilde C+\tilde K},
 \Pi_E(e)=\Pi_{E0}e^p
 $$
 
-At the substratum, zero-flux conditions are imposed for nutrient and antibiotic and the biomass velocity satisfies $\tilde v(0,\tilde t)=0$. At the biofilm-fluid interface, nutrient and antibiotic exchange are imposed through Robin-type transfer laws when the corresponding transfer mode is enabled.
+At the substratum, zero-flux conditions are imposed for nutrient and antibiotic, and the biomass velocity is set to zero. At the biofilm-fluid interface, nutrient and antibiotic exchange are imposed through Robin-type transfer laws when the corresponding transfer mode is enabled.
 
 ## Numerical method
 
