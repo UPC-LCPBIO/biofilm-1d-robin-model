@@ -1,7 +1,14 @@
-module ReducedBiofilm1D
+module BiofilmRobinModel
 
-include("solver.jl")
+using Printf
+
+include("parameters.jl")
+include("grid.jl")
+include("linear_solvers.jl")
+include("transport.jl")
+include("growth_velocity.jl")
 include("hydrodynamics.jl")
+include("solver.jl")
 include("campaigns.jl")
 
 export run_case

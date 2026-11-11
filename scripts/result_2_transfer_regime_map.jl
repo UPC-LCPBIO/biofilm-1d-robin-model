@@ -2,7 +2,7 @@
 # computes R = Phi(T) / Phi(t_start) over (Bi, A0)
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(REPO_ROOT, "src", "reduced_1d", "main_1d_paper.jl"))
+using BiofilmRobinModel
 
 using Printf
 

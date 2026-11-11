@@ -1,5 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(REPO_ROOT, "src", "reduced_1d", "main_1d_paper.jl"))
+using BiofilmRobinModel
 
 using Dates
 using Printf
@@ -247,7 +247,7 @@ function evaluate_case(
             error(
                 "Fixed-thickness check failed: L_final=$(summary.L_final), " *
                 "expected L0tilde=$(CFG.L0tilde). " *
-                "Check main_1d_paper.jl fixed_thickness implementation."
+                "Check the fixed_thickness implementation in the package solver."
             )
         end
     end
