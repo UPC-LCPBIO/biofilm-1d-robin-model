@@ -3,11 +3,8 @@ using Printf
 using DelimitedFiles
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(REPO_ROOT, "src", "reduced_1d", "main_1d_paper.jl"))
+using BiofilmRobinModel
 
-using .Grid1D
-using .Transport1D
-using .ConstraintNu1D
 
 # ------------------------------------------------------------------------------
 # Configuration
@@ -372,268 +369,94 @@ function make_kd_callback(Re::Float64, pset, sigma_norm::Float64)
 end
 
 # ------------------------------------------------------------------------------
-# Local dynamic-kd solver
+# Stress-dependent detachment campaign adapter
 # ------------------------------------------------------------------------------
 function run_case_stress_detachment(;
-    L0tilde::Float64 = CFG.L0tilde,
-    N::Int = CFG.N,
-    Tfinal::Float64 = CFG.Tfinal,
-    dt::Float64 = CFG.dt,
-    save_every::Int = CFG.save_every,
-    Lambda::Float64 = CFG.Lambda,
+    L0tilde::Float64=CFG.L0tilde,
+    N::Int=CFG.N,
+    Tfinal::Float64=CFG.Tfinal,
+    dt::Float64=CFG.dt,
+    save_every::Int=CFG.save_every,
+    Lambda::Float64=CFG.Lambda,
     Da::Float64,
-    Da_a::Float64 = CFG.Da_a,
-    beta_Ab::Float64 = CFG.beta_Ab,
+    Da_a::Float64=CFG.Da_a,
+    beta_Ab::Float64=CFG.beta_Ab,
     Ktilde::Float64,
-    PiE0::Float64 = CFG.PiE0,
-    kill_power::Float64 = CFG.kill_power,
-    gamma_kill::Float64 = CFG.gamma_kill,
-    live_frac0::Float64 = CFG.live_frac0,
-    Lmin::Float64 = CFG.Lmin,
-    C_init::Float64 = 0.0,
-    A_init::Float64 = 0.0,
-    C_top_bc::Symbol = :robin,
-    C_top::Float64 = 1.0,
+    PiE0::Float64=CFG.PiE0,
+    kill_power::Float64=CFG.kill_power,
+    gamma_kill::Float64=CFG.gamma_kill,
+    live_frac0::Float64=CFG.live_frac0,
+    Lmin::Float64=CFG.Lmin,
+    C_init::Float64=0.0,
+    A_init::Float64=0.0,
+    C_top_bc::Symbol=:robin,
+    C_top::Float64=1.0,
     C_top_robin_Bi::Float64,
-    C_top_robin_ref::Float64 = 1.0,
-    A_top_bc::Symbol = :dirichlet,
-    A_top::Float64 = 0.0,
-    A_top_robin_Bi::Float64 = C_top_robin_Bi,
-    A_step_time::Float64 = CFG.tstart,
-    A_step_value::Float64 = CFG.A0,
+    C_top_robin_ref::Float64=1.0,
+    A_top_bc::Symbol=:dirichlet,
+    A_top::Float64=0.0,
+    A_top_robin_Bi::Float64=C_top_robin_Bi,
+    A_step_time::Float64=CFG.tstart,
+    A_step_value::Float64=CFG.A0,
     outdir::String,
     tag::String,
-    save_final_profiles::Bool = false,
-    fixed_thickness::Bool = false,
+    save_final_profiles::Bool=false,
+    fixed_thickness::Bool=false,
     k_d_callback,
 )
-    @assert C_top_bc in (:dirichlet, :robin)
-    @assert A_top_bc in (:dirichlet, :robin)
-    @assert 0.0 < live_frac0 <= 1.0
-
-    L = L0tilde
-    grid = Grid1D.make_grid(L, N)
-    z = grid.z
-    dz = grid.dz
-
-    C = fill(C_init, N)
-    A = fill(A_init, N)
-    phi = fill(live_frac0, N)
-
-    e = zeros(N)
-    v = zeros(N)
-    R_C = zeros(N)
-    R_A = zeros(N)
-    R_phi = zeros(N)
-    D_C = fill(1.0, N)
-    D_A = fill(beta_Ab, N)
-    D_zero = fill(0.0, N)
-    v_zero = fill(0.0, N)
-
-    t_hist = Float64[]
-    L_hist = Float64[]
-    Phi_hist = Float64[]
-    vtop_hist = Float64[]
-    B_hist = Float64[]
-    Cavg_hist = Float64[]
-    Aavg_hist = Float64[]
-    kd_hist = Float64[]
-    sigma0_hist = Float64[]
-    sigmaeff_hist = Float64[]
-    phic_hist = Float64[]
-    clogamp_hist = Float64[]
-
-    Phi_tstart = NaN
-    t = 0.0
-    istep = 0
-
-    mkpath(outdir)
-
-    while t < Tfinal - 1e-15
-        istep += 1
-        t += dt
-
-        Transport1D.monod!(e, C, Ktilde)
-
-        if fixed_thickness
-            fill!(v, 0.0)
-        else
-            ConstraintNu1D.compute_v!(v, e, phi, Lambda, dz)
-        end
-
-        @inbounds for i in 1:N
-            R_C[i] = -Da * e[i] * phi[i]
-            R_A[i] = -Da_a * A[i] * phi[i]
-            R_phi[i] =
-                Lambda * e[i] * phi[i] -
-                Lambda * PiE0 * (e[i]^kill_power) * A[i] * (phi[i]^gamma_kill)
-        end
-
-        # Solutes on current physical grid.
-        if C_top_bc === :robin
-            Transport1D.step_scalar_imex!(C, v_zero, D_C, dt, dz;
-                reaction_rhs = R_C,
-                top_dirichlet = false,
-                top_robin = true,
-                top_robin_coeff = C_top_robin_Bi,
-                top_robin_ref = C_top_robin_ref,
-            )
-        else
-            Transport1D.step_scalar_imex!(C, v_zero, D_C, dt, dz;
-                reaction_rhs = R_C,
-                top_dirichlet = true,
-                top_value = C_top,
-            )
-        end
-
-        A_bc_now = (t >= A_step_time) ? A_step_value : A_top
-
-        if A_top_bc === :robin
-            Transport1D.step_scalar_imex!(A, v_zero, D_A, dt, dz;
-                reaction_rhs = R_A,
-                top_dirichlet = false,
-                top_robin = true,
-                top_robin_coeff = A_top_robin_Bi,
-                top_robin_ref = A_bc_now,
-            )
-        else
-            Transport1D.step_scalar_imex!(A, v_zero, D_A, dt, dz;
-                reaction_rhs = R_A,
-                top_dirichlet = true,
-                top_value = A_bc_now,
-            )
-        end
-
-        # Biomass with growth-induced advection.
-        Transport1D.step_scalar_imex!(phi, v, D_zero, dt, dz;
-            reaction_rhs = R_phi,
-            top_dirichlet = false,
-            advect_top_outflow = true,
-        )
-
-        @inbounds for i in 1:N
-            C[i] = max(C[i], 0.0)
-            A[i] = max(A[i], 0.0)
-            phi[i] = max(phi[i], 0.0)
-        end
-
-        kd_diag = k_d_callback(L, t)
-        kd_now = fixed_thickness ? 0.0 : kd_diag.k_d
-
-        # Update moving boundary only when the moving-domain model is active.
-        if !fixed_thickness
-            Ldot = v[end] - kd_now * L^2
-            Lnew = max(L + dt * Ldot, Lmin)
-
-            if abs(Lnew - L) > 1e-14
-                z_old = z
-                C_old = copy(C)
-                A_old = copy(A)
-                phi_old = copy(phi)
-
-                grid = Grid1D.make_grid(Lnew, N)
-                z = grid.z
-                dz = grid.dz
-
-                C = linear_remap(z_old, C_old, z)
-                A = linear_remap(z_old, A_old, z)
-                phi = linear_remap(z_old, phi_old, z)
-
-                e = similar(C)
-                v = zeros(N)
-                R_C = zeros(N)
-                R_A = zeros(N)
-                R_phi = zeros(N)
-                D_C = fill(1.0, N)
-                D_A = fill(beta_Ab, N)
-                D_zero = fill(0.0, N)
-                v_zero = fill(0.0, N)
-                L = Lnew
-            else
-                L = Lnew
-            end
-        else
-            L = L0tilde
-        end
-
-        if isnan(Phi_tstart) && t >= A_step_time
-            Phi_tstart = Grid1D.trapz_uniform(phi, dz)
-        end
-
-        if istep % save_every == 0
-            Phi = Grid1D.trapz_uniform(phi, dz)
-            Cavg = Grid1D.trapz_uniform(C, dz) / L
-            Aavg = Grid1D.trapz_uniform(A, dz) / L
-            B = isnan(Phi_tstart) ? NaN : (Phi / max(Phi_tstart, 1e-12))
-            kd_save = k_d_callback(L, t)
-
-            push!(t_hist, t)
-            push!(L_hist, L)
-            push!(Phi_hist, Phi)
-            push!(vtop_hist, v[end])
-            push!(B_hist, B)
-            push!(Cavg_hist, Cavg)
-            push!(Aavg_hist, Aavg)
-            push!(kd_hist, kd_save.k_d)
-            push!(sigma0_hist, kd_save.sigma0)
-            push!(sigmaeff_hist, kd_save.sigma_eff)
-            push!(phic_hist, kd_save.phi_c)
-            push!(clogamp_hist, kd_save.clogging_amplification)
-        end
-    end
-
-    Phi_final = Grid1D.trapz_uniform(phi, dz)
-    R_final = isnan(Phi_tstart) ? NaN : (Phi_final / max(Phi_tstart, 1e-12))
-    final_diag = k_d_callback(L, t)
-
-    summary = (
-        L_final = L,
-        Phi_final = Phi_final,
-        Phi_tstart = Phi_tstart,
-        R_final = R_final,
-        k_d_final = final_diag.k_d,
-        sigma0_final = final_diag.sigma0,
-        sigma_eff_final = final_diag.sigma_eff,
-        sigma_eff_norm = final_diag.sigma_eff_norm,
-        phi_c_final = final_diag.phi_c,
-        clogging_amplification_final = final_diag.clogging_amplification,
-        t_history = t_hist,
-        L_history = L_hist,
-        Phi_history = Phi_hist,
-        vtop_history = vtop_hist,
-        B_history = B_hist,
-        Cavg_history = Cavg_hist,
-        Aavg_history = Aavg_hist,
-        kd_history = kd_hist,
-        sigma0_history = sigma0_hist,
-        sigmaeff_history = sigmaeff_hist,
-        phic_history = phic_hist,
-        clogamp_history = clogamp_hist,
-        z = z,
-        C_final = copy(C),
-        A_final = copy(A),
-        phi_final = copy(phi),
-        v_final = copy(v),
-        e_final = copy(e),
+    detachment_law = (t, L) -> k_d_callback(L, t).k_d
+    z, L, summary = run_case(;
+        L0tilde=L0tilde, N=N, Tfinal=Tfinal, dt=dt, save_every=save_every,
+        Lambda=Lambda, Da=Da, Da_a=Da_a, beta_Ab=beta_Ab,
+        Ktilde=Ktilde, PiE0=PiE0, kill_power=kill_power,
+        gamma_kill=gamma_kill, live_frac0=live_frac0, Lmin=Lmin,
+        C_init=C_init, A_init=A_init, C_top_bc=C_top_bc, C_top=C_top,
+        C_top_robin_Bi=C_top_robin_Bi, C_top_robin_ref=C_top_robin_ref,
+        A_top_bc=A_top_bc, A_top=A_top, A_top_robin_Bi=A_top_robin_Bi,
+        A_step_time=A_step_time, A_step_value=A_step_value,
+        fixed_thickness=fixed_thickness, k_d_law=detachment_law,
+        write_output=false, save_final_profiles=false, outdir=nothing,
     )
 
-    tsfile = joinpath(outdir, "$(tag)_timeseries.csv")
-    open(tsfile, "w") do io
+    final_diag = k_d_callback(L, Tfinal)
+    diagnostics = [k_d_callback(summary.L_history[i], summary.t_history[i])
+                   for i in eachindex(summary.t_history)]
+    sigma0_hist = [d.sigma0 for d in diagnostics]
+    sigmaeff_hist = [d.sigma_eff for d in diagnostics]
+    phic_hist = [d.phi_c for d in diagnostics]
+    clogamp_hist = [d.clogging_amplification for d in diagnostics]
+    kd_hist = [d.k_d for d in diagnostics]
+
+    extended = merge(summary, (
+        k_d_final=final_diag.k_d,
+        sigma0_final=final_diag.sigma0,
+        sigma_eff_final=final_diag.sigma_eff,
+        sigma_eff_norm=final_diag.sigma_eff_norm,
+        phi_c_final=final_diag.phi_c,
+        clogging_amplification_final=final_diag.clogging_amplification,
+        kd_history=kd_hist,
+        sigma0_history=sigma0_hist,
+        sigmaeff_history=sigmaeff_hist,
+        phic_history=phic_hist,
+        clogamp_history=clogamp_hist,
+    ))
+
+    mkpath(outdir)
+    open(joinpath(outdir, "$(tag)_timeseries.csv"), "w") do io
         println(io, "t,L,Phi,v_top,B,Cavg,Aavg,k_d,sigma0,sigma_eff,phi_c,clogging_amplification")
-        for i in eachindex(t_hist)
-            println(
-                io,
-                "$(t_hist[i]),$(L_hist[i]),$(Phi_hist[i]),$(vtop_hist[i]),$(B_hist[i]),$(Cavg_hist[i]),$(Aavg_hist[i]),$(kd_hist[i]),$(sigma0_hist[i]),$(sigmaeff_hist[i]),$(phic_hist[i]),$(clogamp_hist[i])",
-            )
+        for i in eachindex(extended.t_history)
+            println(io, join((extended.t_history[i], extended.L_history[i],
+                extended.Phi_history[i], extended.vtop_history[i], extended.B_history[i],
+                extended.Cavg_history[i], extended.Aavg_history[i], kd_hist[i],
+                sigma0_hist[i], sigmaeff_hist[i], phic_hist[i], clogamp_hist[i]), ","))
         end
     end
-
     if save_final_profiles
-        prof = hcat(z, C, A, phi, v, e)
-        writedlm(joinpath(outdir, "$(tag)_final_profiles.csv"), prof, ',')
+        writedlm(joinpath(outdir, "$(tag)_final_profiles.csv"),
+                 hcat(z, summary.C_final, summary.A_final, summary.phi_final,
+                      summary.v_final, summary.e_final), ',')
     end
-
-    return z, L, summary
+    return z, L, extended
 end
 
 # ------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(REPO_ROOT, "src", "reduced_1d", "main_1d_paper.jl"))
+using BiofilmRobinModel
 
 using DelimitedFiles
 using Printf

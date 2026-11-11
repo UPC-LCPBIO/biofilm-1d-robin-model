@@ -8,11 +8,8 @@ The model describes nutrient transport, antibiotic transport, live-biomass dynam
 
 ```text
 biofilm-1d-robin-model/
-├── README.md
-├── LICENSE
 ├── Project.toml
-├── .gitignore
-├── results/
+├── README.md
 ├── scripts/
 │   ├── reproduce_paper.jl
 │   ├── result_1_nutrient_transfer.jl
@@ -20,20 +17,28 @@ biofilm-1d-robin-model/
 │   ├── result_2_transfer_regime_map.jl
 │   ├── result_3_reynolds_threshold.jl
 │   └── result_4_stress_detachment.jl
-└── src/
-    ├── BiofilmRobinReducedModel.jl
-    └── reduced_1d/
-        ├── ReducedBiofilm1D.jl
-        ├── campaigns.jl
-        ├── grid.jl
-        ├── growth_velocity.jl
-        ├── hydrodynamics.jl
-        ├── linear_solvers.jl
-        ├── main_1d_paper.jl
-        ├── parameters.jl
-        ├── solver.jl
-        └── transport.jl
+├── src/
+│   ├── BiofilmRobinModel.jl
+│   ├── parameters.jl
+│   ├── grid.jl
+│   ├── linear_solvers.jl
+│   ├── transport.jl
+│   ├── growth_velocity.jl
+│   ├── hydrodynamics.jl
+│   ├── solver.jl
+│   └── campaigns.jl
+└── test/
+    ├── runtests.jl
+    ├── test_conservation.jl
+    ├── test_boundary_conditions.jl
+    ├── test_moving_boundary.jl
+    ├── test_regression.jl
+    └── test_convergence.jl
 ```
+
+The package is loaded as `using BiofilmRobinModel`. Numerical integration is
+implemented once in `src/solver.jl`; the paper scripts configure the model and
+write experiment-specific diagnostics.
 
 The `results/` directory is intentionally empty in the repository. The scripts create the required output folders when they are executed.
 
@@ -99,15 +104,54 @@ At the substratum, zero-flux conditions are imposed for nutrient and antibiotic,
 
 ## Numerical method
 
-The one-dimensional equations are solved on a uniform grid over the current biofilm domain. The implementation uses a first-order IMEX finite-difference strategy: diffusive transport is advanced implicitly through tridiagonal linear systems, while reaction terms and biomass advection are treated explicitly. The biomass advection term is discretised using an upwind flux.
-
-The fixed-thickness studies impose
+The moving physical domain is mapped to the fixed computational interval using
+$\xi=\tilde z/\tilde L(\tilde t)$. The live-biomass balance is written in
+conservative arbitrary Lagrangian–Eulerian (ALE) form:
 
 $$
-\tilde L(\tilde t)=\tilde L(0)
+\frac{\partial (\tilde L\phi_\ell)}{\partial\tilde t}
++\frac{\partial}{\partial\xi}
+\left[(\tilde v-\xi\dot{\tilde L})\phi_\ell\right]
+=\tilde L\left(\Lambda e(\tilde C)\phi_\ell
+-\Lambda\Pi_{E0}e(\tilde C)^p\tilde A\phi_\ell^{\gamma_{\mathrm{kill}}}\right).
 $$
 
-whereas the stress-detachment study activates the moving-boundary equation.
+Node-centered finite volumes use half-width boundary control volumes. Shared
+upwind fluxes give a telescoping discrete biomass balance. At the moving
+surface the outward relative velocity is the detachment speed
+$\tilde v(\tilde L)-\dot{\tilde L}=k_d\tilde L^2$.
+
+Nutrient and antibiotic equations use the corresponding ALE transformation,
+with implicit diffusion, explicit geometric fluxes and reactions, and Robin
+exchange implemented as a boundary flux in the top half-volume. Dirichlet
+boundaries are supported as well. The time integrator is first-order IMEX;
+upwind biomass transport is first-order in space. No remapping between physical
+grids is needed.
+
+For `fixed_thickness=true`, the original nonexpanding, nonadvecting biomass
+model is retained for the first three paper studies. Because that reduced
+configuration suppresses volumetric expansion, it does **not** generally enforce
+$\phi_\ell\leq1$ under unrestricted growth; this is a modeling limitation,
+not a guarantee of the numerical method. The moving-boundary discretization
+should also be monitored for small violations of local volume-fraction bounds.
+
+Biomass diagnostics returned by `run_case` include integrated growth, killing,
+detachment and any amount restored by positivity clipping. The conservation
+residual accounts for that last correction; a small residual alone does not
+establish positivity, convergence or physical validity.
+
+### Automated checks
+
+Run the package tests with:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+The tests cover discrete conservation, moving-mesh geometric consistency,
+boundary conditions, the output interface and diffusion-grid refinement.
+For research figures, perform additional timestep and grid-refinement checks
+for the specific regimes being reported.
 
 ## Computational results
 
